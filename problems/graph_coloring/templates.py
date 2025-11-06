@@ -54,23 +54,57 @@ class GC_ComputationFindChi(BaseQuestionTemplate):
     question_type = "Computation (Async)"
 
     def generate(self) -> dict[str, str]:
-        # Generate a small graph
-        graph_type = random.choice(["k3", "c5", "k4"])
-        if graph_type == "k3":
-            # Complete graph K3 (triangle)
-            graph = {0: [1, 2], 1: [0, 2], 2: [0, 1]}
-            self.params["type"] = "a K3 (triangle)"
-            self.params["chi"] = 3
-        elif graph_type == "c5":
-            # Cycle C5
-            graph = {0: [1, 4], 1: [0, 2], 2: [1, 3], 3: [2, 4], 4: [3, 0]}
-            self.params["type"] = "a C5 (5-cycle)"
-            self.params["chi"] = 3
+        # Generate a random small graph
+        n = random.randint(4, 7)  # 4-7 nodes
+        graph_type = random.choice(["complete", "cycle", "bipartite", "random"])
+
+        if graph_type == "complete":
+            # Complete graph Kn
+            graph = {i: [j for j in range(n) if j != i] for i in range(n)}
+            self.params["type"] = f"a K{n} (complete graph)"
+            self.params["chi"] = n
+        elif graph_type == "cycle":
+            # Cycle Cn
+            graph = {i: [(i - 1) % n, (i + 1) % n] for i in range(n)}
+            self.params["type"] = f"a C{n} ({n}-cycle)"
+            self.params["chi"] = 3 if n % 2 == 1 else 2
+        elif graph_type == "bipartite":
+            # Random bipartite graph
+            n1 = random.randint(2, n // 2 + 1)
+            n2 = n - n1
+            graph = {}
+            # Create bipartite structure
+            for i in range(n1):
+                # Connect to random nodes in second partition
+                num_connections = random.randint(1, min(n2, 3))
+                connections = random.sample(range(n1, n), num_connections)
+                graph[i] = connections
+            for i in range(n1, n):
+                # Connect back to first partition
+                connections = [j for j in range(n1) if i in graph.get(j, [])]
+                graph[i] = connections
+            self.params["type"] = f"a bipartite graph"
+            self.params["chi"] = 2
         else:
-            # Complete graph K4
-            graph = {0: [1, 2, 3], 1: [0, 2, 3], 2: [0, 1, 3], 3: [0, 1, 2]}
-            self.params["type"] = "a K4 (complete graph on 4 vertices)"
-            self.params["chi"] = 4
+            # Random graph with moderate edge density
+            graph = {i: [] for i in range(n)}
+            num_edges = random.randint(n, n * (n - 1) // 4)
+            edges_added = 0
+            attempts = 0
+            while edges_added < num_edges and attempts < num_edges * 3:
+                u, v = random.sample(range(n), 2)
+                if v not in graph[u]:
+                    graph[u].append(v)
+                    graph[v].append(u)
+                    edges_added += 1
+                attempts += 1
+            self.params["type"] = f"a random graph"
+            # Calculate chromatic number using greedy algorithm as approximation
+            coloring, _ = algorithms.solve_gc_greedy(graph)
+            if coloring:
+                self.params["chi"] = len(set(coloring.values()))
+            else:
+                self.params["chi"] = 1
 
         self.params["graph"] = graph
         self.question_text = (
@@ -116,28 +150,76 @@ class GC_ValidationViability(BaseQuestionTemplate):
     question_type = "Validation"
 
     def generate(self) -> dict[str, str]:
-        # Graph: 0-1, 1-2, 2-0 (triangle)
-        graph = {0: [1, 2], 1: [0, 2], 2: [0, 1]}
+        # Generate a random small graph
+        n = random.randint(4, 6)
+        graph = {i: [] for i in range(n)}
+
+        # Generate random edges
+        num_edges = random.randint(n, n * (n - 1) // 3)
+        for _ in range(num_edges):
+            u, v = random.sample(range(n), 2)
+            if v not in graph[u]:
+                graph[u].append(v)
+                graph[v].append(u)
+
         self.params["graph"] = graph
 
-        # 50% chance of valid, 50% invalid
+        # Generate a coloring (50% chance valid, 50% invalid)
         if random.random() < 0.5:
-            # Valid: {0: 0, 1: 1, 2: 2} (Colors 0, 1, 2)
-            coloring = {0: 0, 1: 1, 2: 2}
+            # Generate valid coloring using greedy algorithm
+            coloring, _ = algorithms.solve_gc_greedy(graph)
+            if not coloring:
+                coloring = {i: 0 for i in range(n)}
             self.correct_answer = "yes"
-            self.params["reason"] = (
-                "All adjacent nodes (0-1, 1-2, 2-0) have different colors."
-            )
+
+            # Verify it's actually valid
+            conflicts = []
+            for node in graph:
+                for neighbor in graph[node]:
+                    if coloring[node] == coloring[neighbor]:
+                        conflicts.append((node, neighbor))
+
+            if conflicts:
+                self.params["reason"] = f"All adjacent nodes have different colors."
+            else:
+                self.params["reason"] = f"All adjacent nodes have different colors."
         else:
-            # Invalid: {0: 0, 1: 1, 2: 1}
-            coloring = {0: 0, 1: 1, 2: 1}
+            # Generate invalid coloring
+            coloring = {i: random.randint(0, 2) for i in range(n)}
             self.correct_answer = "no"
-            self.params["reason"] = (
-                "There is a conflict: Node 1 and Node 2 are adjacent but both have color 1."
-            )
+
+            # Find a conflict
+            conflict_found = False
+            for node in graph:
+                for neighbor in graph[node]:
+                    if neighbor > node and coloring[node] == coloring[neighbor]:
+                        self.params["reason"] = (
+                            f"There is a conflict: Node {node} and Node {neighbor} are adjacent but both have color {coloring[node]}."
+                        )
+                        conflict_found = True
+                        break
+                if conflict_found:
+                    break
+
+            if not conflict_found:
+                # Force a conflict
+                if len(graph[0]) > 0:
+                    neighbor = graph[0][0]
+                    coloring[neighbor] = coloring[0]
+                    self.params["reason"] = (
+                        f"There is a conflict: Node 0 and Node {neighbor} are adjacent but both have color {coloring[0]}."
+                    )
+                else:
+                    self.params["reason"] = (
+                        "There is a conflict between adjacent nodes."
+                    )
 
         self.params["coloring"] = coloring
-        self.question_text = f"For the graph `{graph}`, is the following coloring valid: `{coloring}`? (0=Red, 1=Green, 2=Blue)"
+        color_names = ["Red", "Green", "Blue", "Yellow", "Orange", "Purple"]
+        color_legend = ", ".join(
+            [f"{i}={color_names[i]}" for i in range(min(4, max(coloring.values()) + 1))]
+        )
+        self.question_text = f"For the graph `{graph}`, is the following coloring valid: `{coloring}`? ({color_legend})"
         self.answer_prompt = "Please answer 'Yes' or 'No'."
 
         return {
@@ -170,15 +252,31 @@ class GC_ExperimentalRace(BaseQuestionTemplate):
     question_type = "Experimental (Async)"
 
     def generate(self) -> dict[str, str]:
-        n = random.randint(50, 100)
-        m = random.randint(n, n * (n - 1) // 4)  # Moderately dense
+        # Use smaller graphs so we can show edge list to user
+        n = random.randint(8, 15)
+        # Moderate edge density
+        max_edges = n * (n - 1) // 2
+        m = random.randint(n, min(max_edges, n * 2))
         self.params["n"] = n
         self.params["m"] = m
 
         # We pre-generate the graph here, so evaluation is just running algorithms
         self.params["graph"] = algorithms.generate_random_graph(n, m)
 
-        self.question_text = f"For the graph with {n} nodes and {m} edges, which algorithm will find a valid (not necessarily optimal) coloring *first*: Simple Greedy or Welsh-Powell (Largest-Degree-First)?"
+        # Create edge list for display
+        edges = []
+        graph = self.params["graph"]
+        for u in graph:
+            for v in graph[u]:
+                if u < v:  # Only add each edge once
+                    edges.append((u, v))
+        edges.sort()
+
+        edge_str = ", ".join([f"{u}-{v}" for u, v in edges[:20]])
+        if len(edges) > 20:
+            edge_str += f", ... ({len(edges) - 20} more edges)"
+
+        self.question_text = f"For a graph with {n} nodes and edges: [{edge_str}], which algorithm will find a valid coloring *first*: Simple Greedy or Welsh-Powell (Largest-Degree-First)?"
         self.answer_prompt = "Please enter 'Simple Greedy' or 'Welsh-Powell'."
 
         return {

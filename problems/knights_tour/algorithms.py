@@ -133,3 +133,48 @@ def solve_kt_warnsdorff(n: int) -> tuple[list[tuple[int, int]] | None, float]:
     else:
         end_time = time.perf_counter()
         return (None, end_time - start_time)
+
+
+# --- 3. Random Walk Algorithm ---
+
+
+def solve_kt_random_walk(
+    n: int, max_attempts: int = 100
+) -> tuple[list[tuple[int, int]] | None, float]:
+    """
+    Attempts to find an open Knight's Tour using random walk.
+    This is fast but unreliable - may not find a solution even if one exists.
+    Returns: (list_of_moves, time_taken_sec)
+    """
+    import random
+
+    start_time = time.perf_counter()
+
+    for attempt in range(max_attempts):
+        board = [[-1 for _ in range(n)] for _ in range(n)]
+        path = []
+        r, c = 0, 0
+        move_count = 1
+
+        board[r][c] = move_count
+        path.append((r, c))
+
+        while move_count < n * n:
+            valid_moves = get_valid_moves(n, board, r, c)
+            if not valid_moves:
+                break  # Dead end
+
+            # Choose random move
+            next_r, next_c = random.choice(valid_moves)
+            move_count += 1
+            board[next_r][next_c] = move_count
+            path.append((next_r, next_c))
+            r, c = next_r, next_c
+
+        if move_count == n * n:
+            # Found a complete tour!
+            end_time = time.perf_counter()
+            return (path, end_time - start_time)
+
+    end_time = time.perf_counter()
+    return (None, end_time - start_time)  # Failed to find solution

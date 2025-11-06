@@ -70,12 +70,45 @@ class NQ_TheoryComplexity(BaseQuestionTemplate):
 
     def generate(self) -> dict[str, str]:
         self.params["n"] = random.choice([8, 10, 12, 16])
-        self.question_text = f"What is the time complexity of the standard Backtracking algorithm for finding all solutions to the {self.params['n']}-Queens problem?"
+
+        # Randomly choose which algorithm to ask about
+        algorithm_choices = [
+            {
+                "name": "standard Backtracking",
+                "answer": "o(n!)",
+                "display": "O(N!)",
+                "explanation": "The algorithm explores a search tree that, in the worst case, has N! leaves, leading to a factorial time complexity.",
+            },
+            {
+                "name": "Hill Climbing",
+                "answer": "o(n^2)",
+                "display": "O(N²)",
+                "explanation": "Hill Climbing iteratively improves a configuration. Each iteration examines O(N²) possible moves (N rows × N positions), and typically converges in a reasonable number of iterations.",
+            },
+            {
+                "name": "Simulated Annealing",
+                "answer": "o(n^2)",
+                "display": "O(N²)",
+                "explanation": "Simulated Annealing is similar to Hill Climbing in terms of complexity per iteration. Each iteration checks O(N²) possible state changes, with convergence dependent on the cooling schedule.",
+            },
+            {
+                "name": "Genetic Algorithm",
+                "answer": "o(n^3)",
+                "display": "O(N³)",
+                "explanation": "Genetic Algorithms maintain a population and perform crossover/mutation operations. The complexity is roughly O(population_size × N² × generations), which typically simplifies to O(N³) for standard configurations.",
+            },
+        ]
+
+        chosen = random.choice(algorithm_choices)
+        self.params["algorithm"] = chosen["name"]
+        self.params["explanation_detail"] = chosen["explanation"]
+        self.correct_answer = chosen["answer"]
+        self.params["display_answer"] = chosen["display"]
+
+        self.question_text = f"What is the time complexity of the {chosen['name']} algorithm for finding {'all solutions' if 'Backtracking' in chosen['name'] else 'a solution'} to the {self.params['n']}-Queens problem?"
         self.answer_prompt = (
             "Please provide the time complexity in Big-O notation (e.g., O(N^2))."
         )
-
-        self.correct_answer = "o(n!)"
 
         return {
             "question_text": self.question_text,
@@ -87,12 +120,12 @@ class NQ_TheoryComplexity(BaseQuestionTemplate):
 
         if user_ans_clean == self.correct_answer:
             score = 100
-            explanation = "Correct! The answer is O(N!). The algorithm explores a search tree that, in the worst case, has N! leaves, leading to a factorial time complexity."
+            explanation = f"Correct! The answer is {self.params['display_answer']}. {self.params['explanation_detail']}"
         else:
             score = 0
-            explanation = f"Your answer was '{user_answer}'. The correct answer is **O(N!)**. This is because the algorithm explores a search tree. In the first row, it tries N positions, then N-1, and so on, leading to a factorial-like upper bound."
+            explanation = f"Your answer was '{user_answer}'. The correct answer is **{self.params['display_answer']}**. {self.params['explanation_detail']}"
 
-        return (score, "O(N!)", explanation)
+        return (score, self.params["display_answer"], explanation)
 
 
 # --- Template 1.2: Validation (Placement Viability) ---

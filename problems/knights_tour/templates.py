@@ -53,29 +53,73 @@ class KT_ValidationViability(BaseQuestionTemplate):
     question_type = "Validation"
 
     def generate(self) -> dict[str, str]:
-        n = random.choice([5, 8])
-        # Generate a short, valid path
-        move_list = [(0, 0), (1, 2), (2, 0)]
+        n = random.choice([5, 6, 7, 8])
+
+        # Generate a random valid path using partial backtracking
+        path_length = random.randint(3, 8)
+        move_list = self._generate_valid_path(n, path_length)
+
+        if not move_list or len(move_list) < 2:
+            # Fallback to simple path if generation fails
+            move_list = [(0, 0), (1, 2), (2, 0)]
+
         last_move = move_list[-1]
 
         # 50% chance of a valid next move, 50% invalid
         if random.random() < 0.5:
-            # Pick a valid next move
-            next_move = (3, 2)  # Valid from (2, 0)
-            self.correct_answer = "yes"
-            self.params["reason"] = (
-                f"The move from {last_move} to {next_move} is a valid L-shape to an unvisited square."
-            )
+            # Find valid next moves
+            valid_moves = self._get_valid_moves(last_move, n, set(move_list))
+            if valid_moves:
+                next_move = random.choice(valid_moves)
+                self.correct_answer = "yes"
+                self.params["reason"] = (
+                    f"The move from {last_move} to {next_move} is a valid L-shape to an unvisited square."
+                )
+            else:
+                # No valid moves available, force invalid
+                next_move = (0, 0) if (0, 0) in move_list else last_move
+                self.correct_answer = "no"
+                self.params["reason"] = (
+                    f"The square {next_move} has already been visited in this tour."
+                )
         else:
             # Pick an invalid move
             invalid_type = random.choice(["shape", "visited"])
             if invalid_type == "shape":
-                next_move = (3, 3)  # Not an L-shape
+                # Not an L-shape move
+                candidates = [
+                    (last_move[0] + dx, last_move[1] + dy)
+                    for dx in [-2, -1, 0, 1, 2]
+                    for dy in [-2, -1, 0, 1, 2]
+                    if (dx, dy)
+                    not in [
+                        (2, 1),
+                        (2, -1),
+                        (-2, 1),
+                        (-2, -1),
+                        (1, 2),
+                        (1, -2),
+                        (-1, 2),
+                        (-1, -2),
+                    ]
+                    and (dx != 0 or dy != 0)
+                    and 0 <= last_move[0] + dx < n
+                    and 0 <= last_move[1] + dy < n
+                ]
+                if candidates:
+                    next_move = random.choice(candidates)
+                else:
+                    next_move = (last_move[0], last_move[1])
                 self.params["reason"] = (
                     f"The move from {last_move} to {next_move} is not a valid L-shape knight's move."
                 )
             else:
-                next_move = (0, 0)  # Already visited
+                # Already visited
+                next_move = (
+                    random.choice(move_list[:-1])
+                    if len(move_list) > 1
+                    else move_list[0]
+                )
                 self.params["reason"] = (
                     f"The square {next_move} has already been visited in this tour."
                 )
@@ -84,6 +128,7 @@ class KT_ValidationViability(BaseQuestionTemplate):
         self.params["move_list"] = move_list
         self.params["last_move"] = last_move
         self.params["next_move"] = next_move
+        self.params["n"] = n
 
         self.question_text = f"On a {n}x{n} board, given the partial tour: `{move_list}`, is the move from `{last_move}` to `{next_move}` a valid next step?"
         self.answer_prompt = "Please answer 'Yes' or 'No'."
@@ -92,6 +137,57 @@ class KT_ValidationViability(BaseQuestionTemplate):
             "question_text": self.question_text,
             "answer_prompt": self.answer_prompt,
         }
+
+    def _get_valid_moves(self, pos, n, visited):
+        """Get all valid knight moves from position that haven't been visited."""
+        moves = []
+        deltas = [
+            (2, 1),
+            (2, -1),
+            (-2, 1),
+            (-2, -1),
+            (1, 2),
+            (1, -2),
+            (-1, 2),
+            (-1, -2),
+        ]
+        for dr, dc in deltas:
+            new_r, new_c = pos[0] + dr, pos[1] + dc
+            if 0 <= new_r < n and 0 <= new_c < n and (new_r, new_c) not in visited:
+                moves.append((new_r, new_c))
+        return moves
+
+    def _generate_valid_path(self, n, length):
+        """Generate a valid partial knight's tour path using backtracking."""
+        # Start from random position
+        start_r = random.randint(0, n - 1)
+        start_c = random.randint(0, n - 1)
+        path = [(start_r, start_c)]
+        visited = {(start_r, start_c)}
+
+        attempts = 0
+        max_attempts = 100
+
+        while len(path) < length and attempts < max_attempts:
+            current = path[-1]
+            valid_moves = self._get_valid_moves(current, n, visited)
+
+            if valid_moves:
+                # Choose random valid move
+                next_pos = random.choice(valid_moves)
+                path.append(next_pos)
+                visited.add(next_pos)
+                attempts = 0
+            else:
+                # Backtrack
+                if len(path) > 1:
+                    removed = path.pop()
+                    visited.remove(removed)
+                    attempts += 1
+                else:
+                    break
+
+        return path
 
     def evaluate(self, user_answer: str) -> tuple[int, str, str]:
         user_ans_clean = user_answer.strip().lower()
@@ -117,7 +213,7 @@ class KT_ComputationFindTour(BaseQuestionTemplate):
     question_type = "Computation (Async)"
 
     def generate(self) -> dict[str, str]:
-        n = random.choice([5, 6])  # 5 or 6 is solvable
+        n = random.choice([3, 4, 5, 6, 7])  # Wider range, some unsolvable
         self.params["n"] = n
         self.params["start"] = (0, 0)
 
@@ -223,11 +319,19 @@ class KT_ExperimentalRace(BaseQuestionTemplate):
     question_type = "Experimental (Async)"
 
     def generate(self) -> dict[str, str]:
-        n = random.choice([6, 7])  # 7 is slow for BT, good for comparison
+        n = random.choice([5, 6, 7, 8])  # Wider range for more variety
         self.params["n"] = n
 
-        self.question_text = f"For a {n}x{n} board (N={n}), which algorithm will find a *single* (open) tour first: standard Backtracking or Backtracking with Warnsdorff's Rule?"
-        self.answer_prompt = "Please enter 'Backtracking' or 'Warnsdorff's Rule'."
+        # Randomly choose which algorithms to compare (2-3 algorithms)
+        all_algorithms = ["Backtracking", "Warnsdorff's Rule", "Random Walk"]
+        num_algorithms = random.choice([2, 3])
+        self.params["algorithms"] = random.sample(all_algorithms, num_algorithms)
+
+        algo_list = " vs ".join(self.params["algorithms"])
+        self.question_text = f"For a {n}x{n} board (N={n}), which algorithm will find a *single* (open) tour first: {algo_list}?"
+        self.answer_prompt = (
+            f"Please enter one of: {', '.join(self.params['algorithms'])}."
+        )
 
         return {
             "question_text": self.question_text,
@@ -236,8 +340,11 @@ class KT_ExperimentalRace(BaseQuestionTemplate):
 
     def evaluate(self, user_answer: str) -> tuple[int, str, str]:
         n = self.params["n"]
+        algorithms_to_test = self.params["algorithms"]
         results = {}
+        threads = []
 
+        # Define runner functions for each algorithm
         def run_bt():
             _, time_taken = algorithms.solve_kt_bt(n)
             results["Backtracking"] = time_taken
@@ -246,28 +353,57 @@ class KT_ExperimentalRace(BaseQuestionTemplate):
             _, time_taken = algorithms.solve_kt_warnsdorff(n)
             results["Warnsdorff's Rule"] = time_taken
 
-        t_bt = threading.Thread(target=run_bt)
-        t_warn = threading.Thread(target=run_warnsdorff)
+        def run_random_walk():
+            # Random walk with multiple attempts
+            best_time = float("inf")
+            for attempt in range(3):
+                path, time_taken = algorithms.solve_kt_random_walk(n, max_attempts=50)
+                if path and time_taken < best_time:
+                    best_time = time_taken
+                    break
+            results["Random Walk"] = (
+                best_time if best_time != float("inf") else float("inf")
+            )
 
-        t_bt.start()
-        t_warn.start()
+        # Map algorithm names to their runner functions
+        algo_runners = {
+            "Backtracking": run_bt,
+            "Warnsdorff's Rule": run_warnsdorff,
+            "Random Walk": run_random_walk,
+        }
 
-        t_bt.join()
-        t_warn.join()
+        # Start threads for selected algorithms
+        for algo_name in algorithms_to_test:
+            if algo_name in algo_runners:
+                t = threading.Thread(target=algo_runners[algo_name])
+                t.start()
+                threads.append(t)
 
-        bt_time = results.get("Backtracking", float("inf"))
-        warn_time = results.get("Warnsdorff's Rule", float("inf"))
+        # Wait for all threads to complete
+        for t in threads:
+            t.join()
 
-        # Warnsdorff's will almost certainly win
-        self.correct_answer = (
-            "Warnsdorff's Rule" if warn_time < bt_time else "Backtracking"
-        )
+        # Find the fastest algorithm
+        fastest_time = float("inf")
+        fastest_algo = None
+        for algo_name in algorithms_to_test:
+            algo_time = results.get(algo_name, float("inf"))
+            if algo_time < fastest_time:
+                fastest_time = algo_time
+                fastest_algo = algo_name
+
+        self.correct_answer = fastest_algo if fastest_algo else algorithms_to_test[0]
 
         explanation = f"The fastest algorithm for this instance (N={n}) was **{self.correct_answer}**.\n\n"
         explanation += "--- Results ---\n"
-        explanation += f"Warnsdorff's Rule: {warn_time:.6f}s\n"
-        explanation += f"Backtracking: {bt_time:.6f}s\n"
-        explanation += "\n(Note: Warnsdorff's Rule is a powerful heuristic that drastically prunes the search tree, making it much faster than simple backtracking.)"
+        for algo_name in algorithms_to_test:
+            algo_time = results.get(algo_name, float("inf"))
+            if algo_time == float("inf"):
+                explanation += f"{algo_name}: Failed to find solution\n"
+            else:
+                explanation += f"{algo_name}: {algo_time:.6f}s\n"
+
+        explanation += "\n(Note: Warnsdorff's Rule uses a heuristic to prioritize moves, often outperforming backtracking. Random Walk can be fast but is unreliable.)"
 
         if strings_are_similar(user_answer, self.correct_answer, max_distance=4):
             score = 100

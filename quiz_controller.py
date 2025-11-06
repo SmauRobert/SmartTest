@@ -5,6 +5,7 @@ import random
 import threading
 import inspect
 from typing import TYPE_CHECKING, Callable
+import time
 
 # Import the base class to check against
 try:
@@ -38,6 +39,7 @@ class QuizController:
             BaseQuestionTemplate
         ] = []  # List of generated question *instances*
         self.current_question_index: int = -1
+        random.seed(time.time())
 
         self.load_templates()
 
